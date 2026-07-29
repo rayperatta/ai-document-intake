@@ -1,0 +1,27 @@
+VENDOR ONBOARDING FORM
+======================
+
+Company Name: DataFlux Solutions Ltd.
+Contact Person: João Pereira
+Email: joao@dataflux.example
+Phone: +351 210 000 000
+Address: Rua da Boavista 45, 1200-068 Lisboa
+
+Tax ID (NIF): PT 500 000 000
+Service Category: Data Engineering Consulting
+Annual Contract Value: €45,000.00
+
+Bank Details:
+  Bank: Caixa Geral de Depósitos
+  IBAN: PT50 0035 0000 0000 0000 0000 0
+  SWIFT: CGDIPTPL
+
+Insurance: Professional liability, €500,000 coverage
+Certifications: ISO 27001, SOC 2 Type II
+
+Additional Notes:
+DataFlux will provide 3 senior data engineers for a 12-month engagement
+starting 2026-09-01. NDA already signed on 2026-07-10.
+
+Form submitted: 2026-07-25
+Reviewed by: _______________

@@ -1,0 +1,28 @@
+INVOICE
+========
+
+From: Acme Corp
+Invoice #: INV-2026-0042
+Date: 2026-07-15
+Due Date: 2026-08-15
+
+Bill To:
+  Ray Studios LLC
+  123 Innovation Drive
+  Lisbon, Portugal
+
+Description                          Qty   Unit Price    Total
+──────────────────────────────────  ────  ──────────   ───────
+Cloud hosting (Enterprise plan)       12   $420.00     $5,040.00
+Premium support package                1   $1,800.00   $1,800.00
+On-site training (2 days)              1   $2,500.00   $2,500.00
+────────────────────────────────────────────────────────────────
+Subtotal                                              $9,340.00
+VAT (23%)                                             $2,148.20
+────────────────────────────────────────────────────────────────
+TOTAL DUE                                            $11,488.20
+
+Payment terms: Net 30
+Payment method: Bank transfer — IBAN PT50 0000 0000 0000 0000 0000 0
+
+Contact: billing@acmecorp.example
