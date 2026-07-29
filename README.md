@@ -11,7 +11,7 @@
 
 ## Architecture
 
-```mermaid
+```text
 ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
 │  Inbox   │───▶│ Extract  │───▶│ Validate │───▶│ Persist  │───▶│  Route   │
 │ (API)    │    │ (LLM)    │    │ (Pydantic)│   │ (Postgres)│   │ (Rules)  │

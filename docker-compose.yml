@@ -1,0 +1,47 @@
+services:
+  # ── Postgres ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: docintake
+      POSTGRES_PASSWORD: docintake
+      POSTGRES_DB: docintake
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docintake"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI ───────────────────────────────────────────────
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://docintake:docintake@postgres:5432/docintake
+      LLM_PROVIDER: mock
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "python -c "from docintake.db.database import init_db; init_db()" &&
+             uvicorn docintake.api.app:app --host 0.0.0.0 --port 8000"
+
+  # ── Prefect Worker (optional — for flow execution) ────────
+  worker:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://docintake:docintake@postgres:5432/docintake
+      LLM_PROVIDER: mock
+    command: >
+      python -c "from docintake.db.database import init_db; init_db(); print('Worker ready — flows can be triggered via API')"
+
+volumes:
+  pgdata:
