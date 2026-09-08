@@ -39,8 +39,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/gozuray/ai-document-intake"
-Repository = "https://github.com/gozuray/ai-document-intake"
+Homepage = "https://github.com/rayperatta/ai-document-intake"
+Repository = "https://github.com/rayperatta/ai-document-intake"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docintake"]

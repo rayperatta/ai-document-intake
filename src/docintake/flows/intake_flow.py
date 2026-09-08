@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 @task
-def intake_task(raw_text: str, filename: str | None = None) -> DocumentRecord:
+def intake_task(
+    raw_text: str, filename: str | None = None, source: str = "pipeline"
+) -> DocumentRecord:
     """Create a DocumentRecord from raw text input."""
     import hashlib
 
@@ -43,7 +45,7 @@ def intake_task(raw_text: str, filename: str | None = None) -> DocumentRecord:
         content_hash=content_hash,
         raw_text=raw_text,
         filename=filename,
-        source="pipeline",
+        source=source,
     )
 
 
@@ -71,8 +73,7 @@ def update_extraction_task(record: DocumentRecord, extraction: ExtractionResult)
         repo = DocumentRepository(session)
         updated = repo.update_extraction(str(record.id), extraction)
         if updated is None:
-            logger.warning("Could not update extraction for %s", record.id)
-            return record
+            raise RuntimeError(f"Document {record.id} disappeared before extraction update")
         return updated
 
 
@@ -89,8 +90,7 @@ def update_routing_task(record: DocumentRecord, routing: RoutingDecision) -> Doc
         repo = DocumentRepository(session)
         updated = repo.update_routing(str(record.id), routing)
         if updated is None:
-            logger.warning("Could not update routing for %s", record.id)
-            return record
+            raise RuntimeError(f"Document {record.id} disappeared before routing update")
         return updated
 
 
@@ -104,6 +104,7 @@ def notify_task(record: DocumentRecord) -> dict[str, Any]:
 def intake_pipeline(
     raw_text: str,
     filename: str | None = None,
+    source: str = "pipeline",
 ) -> dict[str, Any]:
     """End-to-end document intake pipeline.
 
@@ -112,25 +113,30 @@ def intake_pipeline(
     Returns a summary dict with the full pipeline result.
     """
     # 1. Intake
-    record = intake_task(raw_text, filename)
+    record = intake_task(raw_text, filename, source)
 
     # 2. Persist (idempotent)
     saved, is_dup = persist_task(record)
 
-    if is_dup:
+    if is_dup and saved.routing is not None:
         logger.info("Duplicate document — returning existing record: %s", saved.id)
         return {
             "document_id": str(saved.id),
             "status": saved.status.value,
             "is_duplicate": True,
             "document_type": saved.document_type.value,
+            "content_hash": saved.content_hash,
+            "routing": saved.routing.model_dump(mode="json"),
         }
 
     # 3. Extract
-    extraction = extract_task(saved)
+    # Resume incomplete submissions from their last persisted stage.
+    extraction = saved.extraction
+    if extraction is None:
+        extraction = extract_task(saved)
 
-    # 4. Update extraction in DB
-    saved = update_extraction_task(saved, extraction)
+        # 4. Update extraction in DB
+        saved = update_extraction_task(saved, extraction)
 
     # 5. Route
     routing = route_task(extraction)
@@ -144,7 +150,9 @@ def intake_pipeline(
     return {
         "document_id": str(saved.id),
         "status": saved.status.value,
-        "is_duplicate": False,
+        "is_duplicate": is_dup,
+        "content_hash": saved.content_hash,
+        "routing": routing.model_dump(mode="json"),
         "document_type": extraction.document_type.value,
         "confidence": extraction.confidence,
         "queue": routing.queue,
@@ -154,9 +162,11 @@ def intake_pipeline(
     }
 
 
-def run_intake_pipeline(raw_text: str, filename: str | None = None) -> dict[str, Any]:
+def run_intake_pipeline(
+    raw_text: str, filename: str | None = None, source: str = "pipeline"
+) -> dict[str, Any]:
     """Run the intake pipeline synchronously (convenience wrapper).
 
     Can be called from tests, CLI, or API without a running Prefect server.
     """
-    return intake_pipeline(raw_text, filename=filename)
+    return intake_pipeline(raw_text, filename=filename, source=source)

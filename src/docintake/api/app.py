@@ -7,21 +7,19 @@ Endpoints:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from docintake import __version__
 from docintake.config import get_settings
+from docintake.flows.intake_flow import run_intake_pipeline
 from docintake.models import (
-    DocStatus,
     DocumentResponse,
     DocumentSubmission,
-    DocumentType,
     HealthResponse,
 )
 
@@ -32,11 +30,6 @@ app = FastAPI(
     description="Inbox → LLM extraction → validation → persistence → routing → notification",
     version=__version__,
 )
-
-
-def _content_hash(text: str) -> str:
-    """Return SHA-256 hex digest of the raw text."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @app.get("/", response_model=HealthResponse)
@@ -69,7 +62,20 @@ async def submit_document(
         raw_bytes = await file.read()
         if not raw_bytes:
             raise HTTPException(status_code=422, detail="Uploaded file is empty")
-        raw_text = raw_bytes.decode("utf-8", errors="replace")
+        if (
+            file.content_type == "application/pdf"
+            or (file.filename or "").lower().endswith(".pdf")
+            or raw_bytes.startswith(b"%PDF-")
+        ):
+            raise HTTPException(
+                status_code=415, detail="PDF extraction is not supported; submit UTF-8 text."
+            )
+        try:
+            raw_text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=415, detail="File must contain UTF-8 text") from exc
+        if "\x00" in raw_text:
+            raise HTTPException(status_code=415, detail="Binary files are not supported")
         filename = file.filename
         source = "file_upload"
     elif request.headers.get("content-type", "").startswith("application/json"):
@@ -94,16 +100,19 @@ async def submit_document(
     if not raw_text or not raw_text.strip():
         raise HTTPException(status_code=422, detail="Document text is empty")
 
-    c_hash = _content_hash(raw_text)
-
-    logger.info("Document received: hash=%s, filename=%s, source=%s", c_hash[:12], filename, source)
-
+    # The synchronous Prefect flow runs off the event loop. This endpoint waits
+    # for persisted extraction and routing; it does not merely acknowledge intake.
+    result = await run_in_threadpool(
+        run_intake_pipeline, raw_text, filename=filename, source=source
+    )
     return DocumentResponse(
-        id=uuid4(),
-        status=DocStatus.RECEIVED,
-        content_hash=c_hash,
-        message="Document received. Pending extraction.",
-        document_type=DocumentType.UNKNOWN,
+        id=result["document_id"],
+        status=result["status"],
+        content_hash=result["content_hash"],
+        message="Document processed; routing persisted.",
+        is_duplicate=result["is_duplicate"],
+        document_type=result["document_type"],
+        routing=result["routing"],
     )
 
 
@@ -113,5 +122,5 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     logger.exception("Unhandled error processing request: %s", exc)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal pipeline error", "error": str(exc)},
+        content={"detail": "Internal pipeline error; resubmit the same text to resume."},
     )

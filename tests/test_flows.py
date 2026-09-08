@@ -16,7 +16,7 @@ from docintake.notify.notifier import notify
 
 
 @pytest.fixture(autouse=True)
-def _clean_db():
+def _clean_db(isolated_settings):
     """Reset the in-memory database before each test."""
     reset_engine()
     init_db()
@@ -112,3 +112,37 @@ class TestNotifier:
         )
         with pytest.raises(AssertionError):
             notify(record)
+
+
+def test_resume_routing_does_not_repeat_persisted_extraction(monkeypatch):
+    from docintake.db.database import get_session
+    from docintake.db.repository import DocumentRepository
+    from docintake.flows import intake_flow
+
+    original = intake_flow.route_document
+    route_calls = 0
+
+    def fail_once(extraction):
+        nonlocal route_calls
+        route_calls += 1
+        if route_calls == 1:
+            raise RuntimeError("simulated routing failure")
+        return original(extraction)
+
+    monkeypatch.setattr(intake_flow, "route_document", fail_once)
+    with pytest.raises(RuntimeError, match="simulated routing failure"):
+        run_intake_pipeline(SAMPLE_INVOICE)
+    with get_session() as session:
+        saved = DocumentRepository(session).list_documents()[0]
+        assert saved.status == DocStatus.EXTRACTED
+        assert saved.extraction is not None
+
+    def unexpected_extraction(*args, **kwargs):
+        pytest.fail("Persisted extraction should be reused")
+
+    monkeypatch.setattr(intake_flow, "extract_document", unexpected_extraction)
+    result = run_intake_pipeline(SAMPLE_INVOICE)
+    assert result["document_id"] == str(saved.id)
+    assert result["status"] == "routed"
+    assert result["is_duplicate"] is True
+    assert route_calls == 2
